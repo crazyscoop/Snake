@@ -1,0 +1,255 @@
+#include <reg51.h>
+#include <string.h>
+#include <math.h>
+#include<stdio.h>
+#include<stdlib.h>
+
+sbit rs = P2^0;
+sbit rw = P2^1;
+sbit en = P2^2;
+unsigned char rampos[8] = {64,72,80,88,96,104,112,120};
+unsigned char LookUp[16] = {0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F};
+unsigned char BinaryLookUp[5] = {16,8,4,2,1};
+unsigned char start = 0xC0;
+unsigned char lastxxx = 0xC0;
+
+
+struct Node
+{
+	unsigned char x;
+	unsigned char y;
+	
+};
+
+void bcdConv(unsigned char x);
+
+void delayLCD()
+{
+	int i;
+	for(i = 0; i < 1250;i++);
+}
+
+void delay()
+{
+	unsigned char i;
+	for(i = 0; i <2;i++)
+	{
+		TMOD = 0x01;
+		TH0 = 0x80;
+		TL0 = 0x30;
+		TR0 = 1;
+		while(TF0 == 0);
+		TR0 = 0;
+		TF0 = 0;
+	}
+}
+
+void wrtdata(unsigned char x)
+{
+	delayLCD();
+	P1 = x;
+	rs = 1;
+	rw = 0;
+	en = 1;
+	en = 0;
+}
+
+void wrtcmd(unsigned char x)
+{
+	delayLCD();
+	P1 = x;
+	rs = 0;
+	rw = 0;
+	en = 1;
+	en = 0;
+}
+
+void wrtstrng(unsigned char *x)
+{
+	unsigned char i,j;
+	i = strlen(x);
+	for(j = 0; j < i;j++)
+	{
+		wrtdata(*x);
+		delay();
+		x++;
+	}
+}
+
+void initLCD()
+{
+	wrtcmd(0x38);
+	wrtcmd(0x0E);
+	wrtcmd(0x80);
+}
+
+void blankCharacter(unsigned char x)
+{
+	unsigned char i;
+	wrtcmd(88);
+	for(i = 0;i<8;i++)
+	{
+		wrtdata(0);
+	}
+	wrtcmd(x);
+	wrtdata(3);
+}
+
+void bcdConv(unsigned char x)
+{
+	unsigned char one,ten;
+	one = x%10;
+	ten = x/10;
+	wrtdata(ten+0x30);
+	wrtdata(one+0x30);
+	return;
+}
+
+
+
+
+unsigned char SegPos(unsigned char x,unsigned char y)
+{
+	unsigned char segx,segy,seg;
+	
+	segx = x/5;
+	segy = y/8;
+	
+	if(segx > 15)
+	{
+		segx = 0;
+	}
+	
+	if(segy > 1)
+	{
+		segy = 0;
+	}
+	
+	if(segy > 0)
+	{
+		seg = LookUp[segx] + 0xC0; 
+	}
+	else
+	{
+		seg = LookUp[segx] + 0x80;
+	}
+	
+	return seg;
+}
+
+void Construct(struct Node snake[],unsigned char startInd,unsigned char endInd,unsigned char cgpos,unsigned char lcdpos)
+{
+	unsigned char i,j,k;
+	unsigned char count[8] = {0,0,0,0,0,0,0,0};
+	k = lcdpos;
+	
+	for(i = startInd ; i > endInd;i-- )
+	{
+		count[snake[i].y%8] += BinaryLookUp[snake[i].x%5];
+	//	wrtdata(snake[i].x%5)
+		//s[snake[i].y%8][snake[i].x%5] = 'A';
+	//	s[4][0] = '1';
+	}
+	count[snake[endInd].y%8] += BinaryLookUp[snake[endInd].x%5];
+	//bcdConv(count[3]);
+	
+	wrtcmd(rampos[cgpos]);
+	for(i = 0; i < 8;i++)
+	{
+		wrtdata(count[i]);
+	}
+	wrtcmd(k);
+	wrtdata(cgpos);
+	
+}
+
+
+
+void Constructor(struct Node snake[],unsigned char len)
+{
+	unsigned char startInd,endInd,i,index,seg,j;
+	seg = SegPos(snake[len-1].x,snake[len-1].y);
+	startInd = len-1;
+	
+	j = 0;
+//	wrtcmd(0x80);
+	
+	for(i = len ; i > 0 ;i--)
+	{
+		if(seg != SegPos(snake[i-1].x,snake[i-1].y))
+		{
+			
+			endInd = i;
+			//wrtdata(i+0x30);
+			Construct(snake,startInd,endInd,j,seg);
+			seg = SegPos(snake[i-1].x,snake[i-1].y);
+			startInd = i-1;
+			j++;
+			
+		}
+	}
+	j++;
+	Construct(snake,startInd,0,j,seg);
+}
+
+void dir6(struct Node snake[],unsigned char len)
+{
+	unsigned char i;
+	for(i = 0; i < len;i++)
+	{
+		snake[i].x += 1;
+	}
+	Constructor(snake,len);
+}
+
+
+void main()
+{
+	unsigned char i,dir,len,j,truth;
+	struct Node snake[20];
+	truth = 0;
+	
+	dir = 6;
+	len = 5;
+	initLCD();
+	
+	//FOR INITIAL SNAKE OF LEN 5
+	
+	for(j = 0;j<15;j++)
+	{
+		for(i = 0 ; i < len;i++)
+		{
+			snake[i].x = i+j;
+			snake[i].y = 12;
+		}
+		if(j > 5)
+		{
+			blankCharacter(lastxxx);
+		}
+
+
+		Constructor(snake,5);
+		delay();
+	}
+//	dir6(snake,5);
+	while(1)
+	{
+	//	dir6(snake,5);
+	//	delay();
+	//	delay();
+	}
+/*
+	while(1)
+	{
+		if(dir == 6) //DIR->6 = FORWARD; DIR->4 = REVERSE; DIR->8 = UP; DIR->2 = DOWN;
+		{
+			dir6(snake,len);
+			wrtcmd(0x80);
+			for(i = 0; i< len;i++)
+			{
+				wrtdata(snake[i].x + 0x30);
+			}
+		}
+	}
+	*/	
+}

@@ -1,0 +1,177 @@
+#include <reg51.h>
+#include <string.h>
+#include <math.h>
+
+sbit rs = P2^0;
+sbit rw = P2^1;
+sbit en = P2^2;
+unsigned char rampos[8] = {64,72,80,88,96,104,112,120};
+unsigned char start = 0xC0;
+
+struct Point
+{
+	unsigned char x;
+	unsigned char y;
+	
+};
+
+
+void bcdConv(unsigned char x);
+
+void delayLCD()
+{
+	int i;
+	for(i = 0; i < 1250;i++);
+}
+
+void delay()
+{
+	unsigned char i;
+	for(i = 0; i <1;i++)
+	{
+		TMOD = 0x01;
+		TH0 = 0x80;
+		TL0 = 0x30;
+		TR0 = 1;
+		while(TF0 == 0);
+		TR0 = 0;
+		TF0 = 0;
+	}
+}
+
+void wrtdata(unsigned char x)
+{
+	delayLCD();
+	P1 = x;
+	rs = 1;
+	rw = 0;
+	en = 1;
+	en = 0;
+}
+
+void wrtcmd(unsigned char x)
+{
+	delayLCD();
+	P1 = x;
+	rs = 0;
+	rw = 0;
+	en = 1;
+	en = 0;
+}
+
+void wrtstrng(unsigned char *x)
+{
+	unsigned char i,j;
+	i = strlen(x);
+	for(j = 0; j < i;j++)
+	{
+		wrtdata(*x);
+		delay();
+		x++;
+	}
+}
+
+void initLCD()
+{
+	wrtcmd(0x38);
+	wrtcmd(0x0E);
+	wrtcmd(0x80);
+}
+
+void blankCharacter(unsigned char x)
+{
+	unsigned char i;
+	wrtcmd(80);
+	for(i = 0;i<8;i++)
+	{
+		wrtdata(0);
+	}
+	wrtcmd(x);
+	wrtdata(2);
+}
+
+void bcdConv(unsigned char x)
+{
+	unsigned char one,ten;
+	one = x%10;
+	ten = x/10;
+	wrtdata(ten+0x30);
+	wrtdata(one+0x30);
+	return;
+}
+
+//for forward dir -> 6
+void snake(struct Point head,unsigned char len,unsigned char dir)
+{
+	struct Point newHead,newTail;
+	
+	unsigned char nos;
+	if(dir == 6)
+	{
+		newHead.x = head.x+1;
+		newHead.y = head.y;
+		
+		newTail.x = head.x - len;
+		newTail.y = head.y;
+		
+		nos = len/5;
+		if(newHead.x%5 != 0)
+		{
+			nos+=1;
+		}
+	}
+}
+
+
+void Constructor(struct Point newHead, unsigned char nos,unsigned char len)
+{
+	unsigned char i,j,segx,segy,startseg,count,b2dx;
+	struct Point temp;
+	
+	segy = newHead.y/0x08;
+	segx = newHead.x/0x05;
+	
+
+			
+	if(segy >= 1)
+	{
+		startseg = 0xC0 + segx;
+	}
+	else
+	{
+		startseg = 0x80 + segx;
+	}
+	
+	for(i = nos; i > 0;i--)
+	{
+		
+		wrtcmd(startseg);
+		for(j = 0;j < newHead.y;j++)
+		{
+			wrtdata(0);
+		}
+		temp.x = newHead.x%5;
+		if(len > 5)
+		{
+			b2dx = b2d(temp.x,1);
+			wrtdata(b2dx)
+		}
+		
+	}
+}
+
+void b2d()
+
+
+void main()
+{
+	unsigned char i,next,j;
+	initLCD();
+
+	
+	
+	wrtcmd(0x80);
+	wrtstrng("DONE");
+	
+	while(1);
+}

@@ -1,0 +1,669 @@
+#include <reg51.h>
+#include <string.h>
+#include <stdlib.h>
+
+sbit rs = P2^0;
+sbit rw = P2^1;
+sbit en = P2^2;
+sbit up = P2^3;
+sbit right = P2^4;
+sbit down = P2^5;
+sbit left = P2^6;
+sbit control = P2^7;
+
+code unsigned char rampos[8] = {64,72,80,88,96,104,112,120};
+code unsigned char LookUp[16] = {0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F};
+code unsigned char BinaryLookUp[5] = {16,8,4,2,1};
+unsigned char start = 0xC0;
+unsigned char pollpos[8] = {0,0,0,0,0,0,0,0};
+unsigned char lastseg = 0;
+unsigned char directions[7];
+unsigned char dirindex[7];
+unsigned char dirlen = 0;
+
+unsigned char temp = 0;
+
+struct Node
+{
+	unsigned char x;
+	unsigned char y;
+};
+
+
+void bcdConv(unsigned char x);
+
+void delayLCD()
+{
+	int i;
+	for(i = 0; i < 1250;i++);
+}
+
+
+void delay()
+{
+	unsigned char i;
+	for(i = 0; i <2;i++)
+	{
+		TMOD = 0x01;
+		TH0 = 0x80;
+		TL0 = 0x30;
+		TR0 = 1;
+		while(TF0 == 0);
+		TR0 = 0;
+		TF0 = 0;
+	}
+}
+
+
+void wrtdata(unsigned char x)
+{
+	delayLCD();
+	P1 = x;
+	rs = 1;
+	rw = 0;
+	en = 1;
+	en = 0;
+}
+
+
+void wrtcmd(unsigned char x)
+{
+	delayLCD();
+	P1 = x;
+	rs = 0;
+	rw = 0;
+	en = 1;
+	en = 0;
+}
+
+
+void wrtstrng(unsigned char *x)
+{
+	unsigned char i,j;
+	i = strlen(x);
+	for(j = 0; j < i;j++)
+	{
+		wrtdata(*x);
+		delay();
+		x++;
+	}
+}
+
+
+void initLCD()
+{
+	wrtcmd(0x38);
+	wrtcmd(0x0E);
+	wrtcmd(0x80);
+}
+
+
+void blankCharacter(unsigned char x)
+{
+	unsigned char i;
+	wrtcmd(120);
+	for(i = 0;i<8;i++)
+	{
+		wrtdata(0);
+	}
+	wrtcmd(x);
+	wrtdata(7);
+}
+
+
+void bcdConv(unsigned char x)
+{
+	unsigned char one,ten;
+	one = x%10;
+	ten = x/10;
+	wrtdata(ten+0x30);
+	wrtdata(one+0x30);
+	return;
+}
+
+
+unsigned char SegPos(unsigned char x,unsigned char y)
+{
+	unsigned char segx,segy,seg;
+	
+	segx = (x)/5;
+	segy = (y%16)/8;
+		
+	if(segy == 1)
+	{
+		seg = LookUp[segx%16] + 0xC0;
+				
+	}
+	else if(segy == 0)
+	{
+		seg = LookUp[segx%16] + 0x80;
+
+	}
+	
+	return seg;
+}
+
+
+void Construct(struct Node snake[],unsigned char startInd,unsigned char endInd,unsigned char cgpos,unsigned char lcdpos)
+{
+	unsigned char i,k;
+	unsigned char count[8] = {0,0,0,0,0,0,0,0};
+	
+	for(i = startInd ; i > endInd;i-- )
+	{
+		count[snake[i].y%8] += BinaryLookUp[snake[i].x%5];
+	}
+	count[snake[endInd].y%8] += BinaryLookUp[snake[endInd].x%5];
+	
+	wrtcmd(rampos[cgpos]);
+	for(i = 0; i < 8;i++)
+	{
+		wrtdata(count[i]);
+	}
+	
+	wrtcmd(lcdpos);
+	wrtdata(cgpos);
+}
+
+
+unsigned char SetSeg(unsigned char seg)
+{
+	unsigned char i;
+	for(i = 0; i < 7;i++)
+	{
+		if(pollpos[i] == seg)
+		{
+			return i;
+		}
+	}
+	i = 0;
+	while(pollpos[i] != 0)
+	{
+		i++;
+	}
+	pollpos[i] = seg;
+	return i;
+}
+
+
+void ClearSeg(unsigned char seg)
+{
+	unsigned char i;
+	
+	for(i = 0 ; i < 7;i++)
+	{
+		if(pollpos[i] == seg)
+		{
+			pollpos[i] = 0;
+		}
+	}
+}
+
+
+void Constructor(struct Node snake[],unsigned char len)
+{
+	unsigned char startInd,endInd,i,seg;
+	seg = SegPos(snake[len-1].x,snake[len-1].y);
+	startInd = len-1;
+
+	for(i = len ; i > 0 ;i--)
+	{
+		if(seg != SegPos(snake[i-1].x,snake[i-1].y))
+		{
+			endInd = i;
+			Construct(snake,startInd,endInd,SetSeg(seg),seg);
+			seg = SegPos(snake[i-1].x,snake[i-1].y);
+			startInd = i-1;
+		}
+	}
+	Construct(snake,startInd,0,SetSeg(seg),seg);
+}
+
+
+void Controller(struct Node snake[],unsigned char start,unsigned char end,unsigned char dir,unsigned len)
+{
+	int i;
+	unsigned char j,truth;
+	truth = 0;
+	switch(dir)
+	{
+		case 8:
+				for(i = start; i >= end;i--)
+				{
+					snake[i].y -= 1;
+				}
+				break;
+				
+		case 6:
+				for(i = start; i >= end;i--)
+				{
+					snake[i].x += 1;
+				}
+				break;
+		
+		case 2:
+				for(i = start; i >= end;i--)
+				{
+					snake[i].y += 1;
+				}
+				break;
+		
+		case 4:
+			for(i = start; i >= end;i--)
+			{
+				snake[i].x -= 1;
+			}
+			break;
+	}
+	
+	  if(lastseg != SegPos(snake[0].x,snake[0].y))
+		{
+			for(j = 0; j < len -1;j++)
+			{
+				if(lastseg == SegPos(snake[i].x,snake[i].y))
+				{
+					truth = 1;
+					break;
+				}
+			}
+			if(truth == 0)
+			{
+				blankCharacter(lastseg);
+				ClearSeg(lastseg);
+				lastseg = SegPos(snake[0].x,snake[0].y);
+			}
+		}
+	
+}
+
+
+void Free()
+{
+	unsigned char i;
+	for(i = 1; i < dirlen;i++)
+	{
+		directions[i-1] = directions[i];
+		dirindex[i-1] = dirindex[i];
+	}
+	dirlen -=1;
+}
+
+void SelfHarm(struct Node snake[],unsigned char len)
+{
+	unsigned char i,truthx;
+	truthx = 0;
+	for(i = 0; i < len-2;i++)
+	{
+		if(snake[i].x == snake[len-1].x && snake[i].y == snake[len-1].y)
+		{
+			truthx = 1;
+			break;
+		}
+	}
+	
+	if(truthx == 1)
+	{
+		wrtstrng("STOP");
+	}
+}
+
+/*
+void main()
+{
+	
+	
+	
+	unsigned char j,len,clicked,uptruth;
+	struct Node snake[10];
+	unsigned char x[9] = {0,31,0,31,0,31,0,31,0};
+	signed char temp,i;
+	uptruth = 0;
+	
+	len = 6;
+	initLCD();
+	temp = 0;
+	//FOR INITIAL SNAKE OF LEN 5
+	wrtcmd(0x0C);
+	
+		for(i = 0 ; i < len;i++)
+		{
+			snake[i].x = i;
+			snake[i].y = 6;
+		}
+		//Constructor(snake,len);
+	//while(1);
+		
+		
+wrtcmd(72);
+wrtdata(0);
+wrtdata(0);
+wrtdata(0);
+wrtdata(10);
+wrtdata(0);
+wrtdata(4);
+wrtdata(17);
+wrtdata(14);
+wrtcmd(0x80);
+wrtdata(1);
+		delay();
+		for(i = 0 ; i < 8;i++)
+		{
+		//	wrtdata(x[i]);
+		}
+		//wrtdata(31);
+		//wrtdata(0);
+	//	wrtcmd(0x80);
+	//	wrtdata(0);
+		//while(1);
+	
+}
+*/
+
+void main()
+{
+	unsigned char j,len,clicked,dirc;
+	struct Node snake[20];
+	signed char temp,i;
+	dirc = 6;
+	len = 15;
+	initLCD();
+	temp = 0;
+	//FOR INITIAL SNAKE OF LEN 5
+	wrtcmd(0x0C);
+	
+		for(i = 0 ; i < len;i++)
+		{
+			snake[i].x = i;
+			snake[i].y = 13;
+		}
+		//Constructor(snake,len);
+		lastseg = SegPos(snake[0].x,snake[0].y);
+	
+		
+	for(j = 1;j<1;j++)
+	{
+		for(i = 0 ; i < len;i++)
+		{
+			snake[i].x = i+j;
+			snake[i].y = 15;
+		}
+		if(lastseg != SegPos(snake[0].x,snake[0].y))
+		{
+			 blankCharacter(lastseg);
+			 ClearSeg(lastseg);
+			 lastseg = SegPos(snake[0].x,snake[0].y);
+		}
+		Constructor(snake,len);	
+	}
+	
+	
+	clicked = 0;
+	up = 1;
+	right = 1;
+	control = 1;
+	
+	dirlen = 0;
+	while(1)
+	{
+			
+		if(control == 0 && clicked == 0)
+		{
+				directions[dirlen] = 6;
+				dirindex[dirlen] = len - 1;
+				dirlen+=1;
+				clicked = 1;
+				dirc = 6;
+			
+		}
+		
+		if(up == 0 && clicked == 0 && dirc != 2)
+		{
+			directions[dirlen] = 8;
+			dirindex[dirlen] = len - 1;
+			dirindex[dirlen-1]-=1;
+			dirlen+=1;
+			clicked = 1;
+			dirc = 8;
+		}
+		else if(down == 0 && clicked == 0 && dirc != 8)
+		{
+			directions[dirlen] = 2;
+			dirindex[dirlen] = len - 1;
+			dirindex[dirlen-1]-=1;
+			dirlen+=1;
+			clicked = 1;
+			dirc = 2;
+		}
+		else if(right == 0 && clicked == 0 && dirc != 4)
+		{
+			directions[dirlen] = 6;
+			dirindex[dirlen] = len - 1;
+			dirindex[dirlen-1]-=1;
+			dirlen+=1;
+			clicked = 1;
+			dirc = 6;
+		}
+		else if(left == 0 && clicked == 0 && dirc != 6)
+		{
+			directions[dirlen] = 4;
+			dirindex[dirlen] = len - 1;
+			dirindex[dirlen-1]-=1;
+			dirlen+=1;
+			clicked = 1;
+			dirc = 6;
+		}
+		
+		
+		for(i = 0; i < dirlen  ;i++)
+		{
+			if(i == 0 && i == dirlen - 1)
+			{
+				switch(directions[i])
+				{
+					case 8:
+						//dir8(snake,dirindex[i],0);
+						Controller(snake,dirindex[i],0,8,len);
+						break;
+					
+					case 6:
+						//dir6(snake,dirindex[i],0);
+						Controller(snake,dirindex[i],0,6,len);
+						break;
+					
+					case 2:
+						//dir2(snake,dirindex[i],0);
+						Controller(snake,dirindex[i],0,2,len);
+						break;
+					
+					case 4:
+						Controller(snake,dirindex[i],0,4,len);
+						break;
+				}
+			}
+			else if(i != 0 && i == dirlen - 1)
+			{
+				switch(directions[i])
+				{
+					case 8:
+						//dir8(snake,dirindex[i],dirindex[i-1]+1);
+						Controller(snake,dirindex[i],dirindex[i-1]+1,8,len);
+						for(i = 1;i < dirlen-1;i++)
+						{
+							temp = 0;
+							temp = dirindex[i];
+							temp-=1;
+							if(temp >= 0)
+							{
+								dirindex[i] = temp;
+							}
+						}
+						temp = 0;
+						temp = dirindex[0];
+						temp-=1;
+						if(temp >= 0)
+						{
+							dirindex[0] = temp;
+						}
+						if(temp < 0)
+						{
+							Free();
+						}
+						break;
+					
+					case 6:
+						Controller(snake,dirindex[i],dirindex[i-1]+1,6,len);
+						//dir6(snake,dirindex[i],dirindex[i-1]+1);
+						for(i = 1;i < dirlen-1;i++)
+						{
+							temp = 0;
+							temp = dirindex[i];
+							temp-=1;
+							if(temp >= 0)
+							{
+								dirindex[i] = temp;
+							}
+						}
+						temp = 0;
+						temp = dirindex[0];
+						temp-=1;
+						if(temp >= 0)
+						{
+							dirindex[0] = temp;
+						}
+						if(temp < 0)
+						{
+							Free();
+						}
+						break;
+						
+					case 2:
+						Controller(snake,dirindex[i],dirindex[i-1]+1,2,len);
+						//dir2(snake,dirindex[i],dirindex[i-1]+1);
+						for(i = 1;i < dirlen-1;i++)
+						{
+							temp = 0;
+							temp = dirindex[i];
+							temp-=1;
+							if(temp >= 0)
+							{
+								dirindex[i] = temp;
+							}
+						}
+						temp = 0;
+						temp = dirindex[0];
+						temp-=1;
+						if(temp >= 0)
+						{
+							dirindex[0] = temp;
+						}
+						if(temp < 0)
+						{
+							Free();
+						}
+						break;
+						
+					case 4:
+						Controller(snake,dirindex[i],dirindex[i-1]+1,4,len);
+						//dir2(snake,dirindex[i],dirindex[i-1]+1);
+						for(i = 1;i < dirlen-1;i++)
+						{
+							temp = 0;
+							temp = dirindex[i];
+							temp-=1;
+							if(temp >= 0)
+							{
+								dirindex[i] = temp;
+							}
+						}
+						temp = 0;
+						temp = dirindex[0];
+						temp-=1;
+						if(temp >= 0)
+						{
+							dirindex[0] = temp;
+						}
+						if(temp < 0)
+						{
+							Free();
+						}
+						break;
+				}
+			}
+			else if(i == 0 && i != dirlen - 1)
+			{
+				switch(directions[i])
+				{
+					case 8:
+						if(dirindex[i] >= 0)
+						{
+							Controller(snake,dirindex[i],0,8,len);
+							//dir8(snake,dirindex[i],0);
+						}
+						break;
+					
+					case 6:
+						if(dirindex[i] >= 0)
+						{
+							Controller(snake,dirindex[i],0,6,len);
+							//dir6(snake,dirindex[i],0);
+						}
+						break;
+						
+					case 2:
+						if(dirindex[i] >= 0)
+						{
+							Controller(snake,dirindex[i],0,2,len);
+							//dir2(snake,dirindex[i],0);
+						}
+						break;
+						
+					case 4:
+						if(dirindex[i] >= 0)
+						{
+							Controller(snake,dirindex[i],0,4,len);
+							//dir2(snake,dirindex[i],0);
+						}
+						break;
+				}
+			}
+			else if(i != 0 && i != dirlen - 1)
+			{
+				switch(directions[i])
+				{
+					case 8:
+						Controller(snake,dirindex[i],dirindex[i-1]+1,8,len);
+						//dir8(snake,dirindex[i],dirindex[i-1]+1);
+						break;
+						
+					case 6:
+						Controller(snake,dirindex[i],dirindex[i-1]+1,6,len);
+						//dir6(snake,dirindex[i],dirindex[i-1]+1);
+						break;
+					
+					case 2:
+						//dirindex[i-1]-=1;
+						Controller(snake,dirindex[i],dirindex[i-1]+1,2,len);
+						//dir2(snake,dirindex[i],dirindex[i-1]+1);
+						break;
+					
+					case 4:
+						//dirindex[i-1]-=1;
+						Controller(snake,dirindex[i],dirindex[i-1]+1,4,len);
+						//dir2(snake,dirindex[i],dirindex[i-1]+1);
+						break;
+				}
+			}
+		}
+		
+		SelfHarm(snake,len);
+		Constructor(snake,len);
+		
+		if(clicked == 1 && up == 1 && right == 1 && control == 1)
+		{
+			clicked = 0;
+		}
+
+	}
+	
+	while(1);
+}

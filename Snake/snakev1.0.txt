@@ -1,0 +1,211 @@
+#include <reg51.h>
+#include <string.h>
+#include <math.h>
+
+sbit rs = P2^0;
+sbit rw = P2^1;
+sbit en = P2^2;
+unsigned char rampos[8] = {64,72,80,88,96,104,112,120};
+unsigned char start = 0xC0;
+unsigned char startu = 0x80;
+
+void constructor(unsigned char len,unsigned char apos,unsigned char right,unsigned char cpos);
+void bcdConv(unsigned char x);
+
+void delayLCD()
+{
+	int i;
+	for(i = 0; i < 1250;i++);
+}
+
+void delay()
+{
+	unsigned char i;
+	for(i = 0; i <1;i++)
+	{
+		TMOD = 0x01;
+		TH0 = 0x80;
+		TL0 = 0x30;
+		TR0 = 1;
+		while(TF0 == 0);
+		TR0 = 0;
+		TF0 = 0;
+	}
+}
+
+void wrtdata(unsigned char x)
+{
+	delayLCD();
+	P1 = x;
+	rs = 1;
+	rw = 0;
+	en = 1;
+	en = 0;
+}
+
+void wrtcmd(unsigned char x)
+{
+	delayLCD();
+	P1 = x;
+	rs = 0;
+	rw = 0;
+	en = 1;
+	en = 0;
+}
+
+void wrtstrng(unsigned char *x)
+{
+	unsigned char i,j;
+	i = strlen(x);
+	for(j = 0; j < i;j++)
+	{
+		wrtdata(*x);
+		delay();
+		x++;
+	}
+}
+
+void initLCD()
+{
+	wrtcmd(0x38);
+	wrtcmd(0x0E);
+	wrtcmd(0x80);
+}
+
+
+void snake(unsigned char x,unsigned char next)
+{
+	
+
+	
+	constructor(x,start,0,0);
+	constructor(x,start+0x01,1,1);
+	
+	/*
+	unsigned char i,rt;
+	wrtcmd(64);
+	for(i = 0; i < 6;i++)
+	{
+		wrtdata(0);
+	}
+	
+	
+	wrtdata(x);
+	wrtcmd(0xC0);
+	wrtdata(0);
+	*/
+}
+
+
+
+void constructor(unsigned char len,unsigned char apos,unsigned char right,unsigned char cpos)
+{
+	unsigned char i,snake,lmask,rmask,temp;
+	snake = 31;
+	lmask =  31;
+	rmask = 1;
+	
+	if(cpos == 0)
+	{
+		wrtcmd(64);
+	}
+	else
+	{
+		wrtcmd(72);
+	}
+	for(i = 0;i < 6;i++)
+	{
+		wrtdata(0);
+	}
+	
+	if(right == 1)
+	{
+	//	startu += 0x01;
+	//	wrtcmd(startu);
+	//	wrtdata('H');
+	
+		
+		rmask = rmask << (5-len);
+		snake = temp|rmask;
+		temp = snake;
+		wrtdata(snake);
+		wrtcmd(apos);
+		wrtdata(cpos);
+		if(len == 5)
+		{
+			temp = 0;
+		}
+
+	}
+	else
+	{
+	//	startd += 0x01;
+	//	wrtcmd(startd);
+	//	wrtdata('I');
+	
+		lmask = lmask >> len;
+		snake = snake & lmask;
+		wrtdata(snake);
+		wrtcmd(apos);
+		wrtdata(cpos);
+		
+	
+		
+	}
+	
+}
+
+void blankCharacter(unsigned char x)
+{
+	unsigned char i;
+	wrtcmd(80);
+	for(i = 0;i<8;i++)
+	{
+		wrtdata(0);
+	}
+	wrtcmd(x);
+	wrtdata(2);
+}
+
+void bcdConv(unsigned char x)
+{
+	unsigned char one,ten;
+	one = x%10;
+	ten = x/10;
+	wrtdata(ten+0x30);
+	wrtdata(one+0x30);
+	return;
+	
+}
+
+
+void main()
+{
+	unsigned char i,next,j;
+	initLCD();
+	i = 5;
+	next = 0;
+	
+	wrtcmd(0x0C);
+	
+	
+	while(1)
+	{
+	
+		i+=1;
+		if(i > 5)
+		{
+			i = i - 5;
+			next = 1;
+			blankCharacter(start);
+			start+=1;
+		}
+		snake(i,next);
+		next = 0;
+		delay();
+	}
+	wrtcmd(0x80);
+	wrtstrng("DONE");
+	
+	while(1);
+}

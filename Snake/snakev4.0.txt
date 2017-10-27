@@ -1,0 +1,305 @@
+#include <reg51.h>
+#include <string.h>
+#include <math.h>
+#include<stdio.h>
+#include<stdlib.h>
+
+sbit rs = P2^0;
+sbit rw = P2^1;
+sbit en = P2^2;
+sbit up = P2^4;
+unsigned char rampos[8] = {64,72,80,88,96,104,112,120};
+unsigned char LookUp[16] = {0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F};
+unsigned char BinaryLookUp[5] = {16,8,4,2,1};
+unsigned char start = 0xC0;
+unsigned char lastxxx = 0xC0;
+unsigned char pollpos[8] = {0,0,0,0,0,0,0,0};
+unsigned char lastseg = 0;
+unsigned char directions[4] = {0,0,0,0};
+unsigned char dirIndex = 0; 
+unsigned char clicked = 0;
+
+
+struct Node
+{
+	unsigned char x;
+	unsigned char y;
+	
+};
+
+
+void bcdConv(unsigned char x);
+
+void delayLCD()
+{
+	int i;
+	for(i = 0; i < 1250;i++);
+}
+
+
+void delay()
+{
+	unsigned char i;
+	for(i = 0; i <2;i++)
+	{
+		TMOD = 0x01;
+		TH0 = 0x80;
+		TL0 = 0x30;
+		TR0 = 1;
+		while(TF0 == 0);
+		TR0 = 0;
+		TF0 = 0;
+	}
+}
+
+
+void wrtdata(unsigned char x)
+{
+	delayLCD();
+	P1 = x;
+	rs = 1;
+	rw = 0;
+	en = 1;
+	en = 0;
+}
+
+
+void wrtcmd(unsigned char x)
+{
+	delayLCD();
+	P1 = x;
+	rs = 0;
+	rw = 0;
+	en = 1;
+	en = 0;
+}
+
+
+void wrtstrng(unsigned char *x)
+{
+	unsigned char i,j;
+	i = strlen(x);
+	for(j = 0; j < i;j++)
+	{
+		wrtdata(*x);
+		delay();
+		x++;
+	}
+}
+
+
+void initLCD()
+{
+	wrtcmd(0x38);
+	wrtcmd(0x0E);
+	wrtcmd(0x80);
+}
+
+
+void blankCharacter(unsigned char x)
+{
+	unsigned char i;
+	wrtcmd(120);
+	for(i = 0;i<8;i++)
+	{
+		wrtdata(0);
+	}
+	wrtcmd(x);
+	wrtdata(7);
+}
+
+
+void bcdConv(unsigned char x)
+{
+	unsigned char one,ten;
+	one = x%10;
+	ten = x/10;
+	wrtdata(ten+0x30);
+	wrtdata(one+0x30);
+	return;
+}
+
+
+unsigned char SegPos(unsigned char x,unsigned char y)
+{
+	unsigned char segx,segy,seg;
+	
+	segx = x/5;
+	segy = y/8;
+	
+	if(segx > 15)
+	{
+		segx = 0;
+	}
+	
+	if(segy > 1)
+	{
+		segy = 0;
+	}
+	
+	if(segy > 0)
+	{
+		seg = LookUp[segx] + 0xC0; 
+	}
+	else
+	{
+		seg = LookUp[segx] + 0x80;
+	}
+	
+	return seg;
+}
+
+
+void Construct(struct Node snake[],unsigned char startInd,unsigned char endInd,unsigned char cgpos,unsigned char lcdpos)
+{
+	unsigned char i,k;
+	unsigned char count[8] = {0,0,0,0,0,0,0,0};
+	k = lcdpos;
+	
+	
+	for(i = startInd ; i > endInd;i-- )
+	{
+		count[snake[i].y%8] += BinaryLookUp[snake[i].x%5];
+	}
+	count[snake[endInd].y%8] += BinaryLookUp[snake[endInd].x%5];
+
+	wrtcmd(rampos[cgpos]);
+	for(i = 0; i < 8;i++)
+	{
+		wrtdata(count[i]);
+	}
+	wrtcmd(k);
+	wrtdata(cgpos);
+	
+}
+
+
+unsigned char SetSeg(unsigned char seg)
+{
+	unsigned char i;
+	for(i = 0; i < 7;i++)
+	{
+		if(pollpos[i] == seg)
+		{
+			return i;
+		}
+	}
+	i = 0;
+	while(pollpos[i] != 0)
+	{
+		i++;
+	}
+	pollpos[i] = seg;
+	return i;
+}
+
+
+void ClearSeg(unsigned char seg)
+{
+	unsigned char i;
+	
+	for(i = 0 ; i < 7;i++)
+	{
+		if(pollpos[i] == seg)
+		{
+			pollpos[i] = 0;
+		}
+	}
+}
+
+
+void Constructor(struct Node snake[],unsigned char len)
+{
+	unsigned char startInd,endInd,i,seg;
+	seg = SegPos(snake[len-1].x,snake[len-1].y);
+	startInd = len-1;
+
+	for(i = len ; i > 0 ;i--)
+	{
+		
+		if(seg != SegPos(snake[i-1].x,snake[i-1].y))
+		{
+			
+			endInd = i;
+			Construct(snake,startInd,endInd,SetSeg(seg),seg);
+			seg = SegPos(snake[i-1].x,snake[i-1].y);
+			startInd = i-1;
+
+		}
+	}
+	Construct(snake,startInd,0,SetSeg(seg),seg);
+}
+
+
+void dir6(struct Node snake[],unsigned char len)
+{
+	unsigned char i;
+	for(i = 0; i < len;i++)
+	{
+		snake[i].x += 1;
+	}
+	
+  if(lastseg != SegPos(snake[0].x,snake[0].y))
+		{
+			 blankCharacter(lastseg);
+			 ClearSeg(lastseg);
+			 lastseg = SegPos(snake[0].x,snake[0].y);
+	}
+	Constructor(snake,len);
+}
+
+
+void main()
+{
+	unsigned char i,dir,len,j;
+	struct Node snake[20];
+	
+	dir = 6;
+	len = 6;
+	up = 1;
+	
+	initLCD();
+	
+	//FOR INITIAL SNAKE OF LEN 5
+	wrtcmd(0x0C);
+	
+		for(i = 0 ; i < len;i++)
+		{
+			snake[i].x = i;
+			snake[i].y = 12;
+		}
+		//Constructor(snake,len);
+		lastseg = SegPos(snake[0].x,snake[0].y);
+	
+		
+	for(j = 1;j<1;j++)
+	{
+		for(i = 0 ; i < len;i++)
+		{
+			snake[i].x = i+j;
+			snake[i].y = 12;
+		}
+		if(lastseg != SegPos(snake[0].x,snake[0].y))
+		{
+			 blankCharacter(lastseg);
+			 ClearSeg(lastseg);
+			 lastseg = SegPos(snake[0].x,snake[0].y);
+		}
+		Constructor(snake,len);	
+	}
+	
+	dirIndex = 0;
+	clicked = 1;
+	up = 1;
+	while(1)
+	{
+		//dir6(snake,len);
+		wrtdata('S');
+		
+
+	}
+	
+	
+	while(1);
+
+}
